@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
 
+interface Attachment {
+  type: string;
+  media_type: string;
+  data: string;
+  filename?: string;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    // useChat sends { messages } by default.
-    // We need conversation ID. It might be in the body if we passed it, or we can extract from headers/params.
-    // For now, let's assume we pass it in the body as 'id' or 'chatId'.
-    
-    const { messages, id } = body;
+    const { messages, id, attachments } = body;
     
     if (!id) {
        return NextResponse.json({ error: 'Conversation ID required' }, { status: 400 });
@@ -17,12 +20,21 @@ export async function POST(req: Request) {
     
     const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8001';
     
+    // Build request body with content and optional attachments
+    const requestBody: { content: string; attachments?: Attachment[] } = {
+      content: lastMessage.content
+    };
+    
+    if (attachments && attachments.length > 0) {
+      requestBody.attachments = attachments;
+    }
+    
     const response = await fetch(`${backendUrl}/api/conversations/${id}/message/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ content: lastMessage.content }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -44,4 +56,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
-

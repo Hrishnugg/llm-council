@@ -3,6 +3,7 @@
 import { useChat } from "@ai-sdk/react";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
+import { MessageReasoning } from "@/components/ai-elements/message-reasoning";
 import { 
   PromptInput, 
   PromptInputAttachments, 
@@ -19,20 +20,12 @@ import {
   PromptInputActionAddAttachments
 } from "@/components/ai-elements/prompt-input";
 import { GlobeIcon, ImageIcon } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState } from "react";
 
 export function ToolsChat() {
-  const { messages, append, isLoading, setInput, input } = useChat({
+  const { messages, append, isLoading } = useChat({
     api: "/api/tools",
   } as any) as any;
-  
-  // Since useChat manages input state, we need to sync it or just use its setInput
-  // However, PromptInput manages its own state locally if not controlled.
-  // To modify input from actions, we might need a controlled input or a ref/callback.
-  // The PromptInput component (as per previous read) has a textInput context if using PromptInputProvider,
-  // or it manages it locally.
-  // Let's wrap in PromptInputProvider or use the local state if possible.
-  // Actually, PromptInputTextarea has a `value` and `onChange` prop if we want to control it.
   
   const [localInput, setLocalInput] = useState("");
 
@@ -68,6 +61,12 @@ export function ToolsChat() {
           {messages.map((msg: any) => (
             <Message key={msg.id} from={msg.role as "user" | "assistant"}>
               <MessageContent>
+                {msg.reasoning && (
+                  <MessageReasoning 
+                    reasoning={msg.reasoning} 
+                    isLoading={isLoading && msg.id === messages[messages.length - 1].id && !msg.content} 
+                  />
+                )}
                 <MessageResponse>{msg.content}</MessageResponse>
                 {msg.toolInvocations?.map((toolInvocation: any) => (
                     <div key={toolInvocation.toolCallId} className="mt-2 p-2 bg-muted rounded text-xs font-mono">

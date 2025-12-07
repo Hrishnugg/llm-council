@@ -4,13 +4,23 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import uuid
 import json
 import asyncio
 
 from . import storage
-from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
+from .council import (
+    run_full_council, 
+    generate_conversation_title, 
+    stage1_collect_responses, 
+    stage2_collect_rankings, 
+    stage3_synthesize_final, 
+    calculate_aggregate_rankings,
+    stage1_stream_responses,
+    stage2_stream_rankings,
+    stage3_stream_synthesis
+)
 
 app = FastAPI(title="LLM Council API")
 
@@ -29,9 +39,18 @@ class CreateConversationRequest(BaseModel):
     pass
 
 
+class Attachment(BaseModel):
+    """File attachment with base64 data."""
+    type: str  # "image" or "file"
+    media_type: str  # MIME type like "image/png"
+    data: str  # base64 encoded data
+    filename: Optional[str] = None
+
+
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
     content: str
+    attachments: Optional[List[Attachment]] = None
 
 
 class ConversationMetadata(BaseModel):
@@ -101,9 +120,23 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         title = await generate_conversation_title(request.content)
         storage.update_conversation_title(conversation_id, title)
 
+    # Convert attachments to dict format
+    attachments = None
+    if request.attachments:
+        attachments = [
+            {
+                "type": att.type,
+                "media_type": att.media_type,
+                "data": att.data,
+                "filename": att.filename
+            }
+            for att in request.attachments
+        ]
+
     # Run the 3-stage council process
     stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
-        request.content
+        request.content,
+        attachments
     )
 
     # Add assistant message with all stages
@@ -127,7 +160,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
 async def send_message_stream(conversation_id: str, request: SendMessageRequest):
     """
     Send a message and stream the 3-stage council process.
-    Returns Server-Sent Events as each stage completes.
+    Returns Server-Sent Events with granular streaming of each model's response.
     """
     # Check if conversation exists
     conversation = storage.get_conversation(conversation_id)
@@ -136,6 +169,19 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
     # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
+
+    # Convert attachments to dict format
+    attachments = None
+    if request.attachments:
+        attachments = [
+            {
+                "type": att.type,
+                "media_type": att.media_type,
+                "data": att.data,
+                "filename": att.filename
+            }
+            for att in request.attachments
+        ]
 
     async def event_generator():
         try:
@@ -147,21 +193,82 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
-            # Stage 1: Collect responses
+            # Stage 1: Stream responses from all models
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            stage1_results = await stage1_collect_responses(request.content)
-            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+            
+            stage1_results = []
+            async for event in stage1_stream_responses(request.content, attachments):
+                event_type = event.get("type")
+                
+                if event_type == "model_start":
+                    yield f"data: {json.dumps({'type': 'stage1_model_start', 'model': event['model']})}\n\n"
+                    
+                elif event_type == "model_delta":
+                    yield f"data: {json.dumps({'type': 'stage1_model_delta', 'model': event['model'], 'content': event['content']})}\n\n"
+                    
+                elif event_type == "model_reasoning":
+                    yield f"data: {json.dumps({'type': 'stage1_model_reasoning', 'model': event['model'], 'content': event['content']})}\n\n"
+                    
+                elif event_type == "model_done":
+                    yield f"data: {json.dumps({'type': 'stage1_model_done', 'model': event['model'], 'response': event['response'], 'reasoning': event.get('reasoning')})}\n\n"
+                    
+                elif event_type == "model_error":
+                    yield f"data: {json.dumps({'type': 'stage1_model_error', 'model': event['model'], 'error': event.get('error')})}\n\n"
+                    
+                elif event_type == "stage_complete":
+                    stage1_results = event["results"]
+                    yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
-            # Stage 2: Collect rankings
+            # Stage 2: Stream rankings from all models
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-            stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
-            aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
+            
+            stage2_results = []
+            label_to_model = {}
+            aggregate_rankings = []
+            
+            async for event in stage2_stream_rankings(request.content, stage1_results, attachments):
+                event_type = event.get("type")
+                
+                if event_type == "model_start":
+                    yield f"data: {json.dumps({'type': 'stage2_model_start', 'model': event['model']})}\n\n"
+                    
+                elif event_type == "model_delta":
+                    yield f"data: {json.dumps({'type': 'stage2_model_delta', 'model': event['model'], 'content': event['content']})}\n\n"
+                    
+                elif event_type == "model_reasoning":
+                    yield f"data: {json.dumps({'type': 'stage2_model_reasoning', 'model': event['model'], 'content': event['content']})}\n\n"
+                    
+                elif event_type == "model_done":
+                    yield f"data: {json.dumps({'type': 'stage2_model_done', 'model': event['model'], 'ranking': event['ranking'], 'parsed_ranking': event['parsed_ranking'], 'reasoning': event.get('reasoning')})}\n\n"
+                    
+                elif event_type == "model_error":
+                    yield f"data: {json.dumps({'type': 'stage2_model_error', 'model': event['model'], 'error': event.get('error')})}\n\n"
+                    
+                elif event_type == "stage_complete":
+                    stage2_results = event["results"]
+                    label_to_model = event["label_to_model"]
+                    aggregate_rankings = event["aggregate_rankings"]
+                    yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
 
-            # Stage 3: Synthesize final answer
+            # Stage 3: Stream chairman synthesis
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results)
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+            
+            stage3_result = {}
+            async for event in stage3_stream_synthesis(request.content, stage1_results, stage2_results, attachments):
+                event_type = event.get("type")
+                
+                if event_type == "delta":
+                    yield f"data: {json.dumps({'type': 'stage3_delta', 'model': event['model'], 'content': event['content']})}\n\n"
+                    
+                elif event_type == "reasoning":
+                    yield f"data: {json.dumps({'type': 'stage3_reasoning', 'model': event['model'], 'content': event['content']})}\n\n"
+                    
+                elif event_type == "done":
+                    stage3_result = event["result"]
+                    yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+                    
+                elif event_type == "error":
+                    yield f"data: {json.dumps({'type': 'stage3_error', 'model': event['model'], 'error': event.get('error')})}\n\n"
 
             # Wait for title generation if it was started
             if title_task:
@@ -181,6 +288,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             # Send error event
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 

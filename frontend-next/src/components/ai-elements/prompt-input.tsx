@@ -493,11 +493,35 @@ export const PromptInput = ({
       if (!accept || accept.trim() === "") {
         return true;
       }
-      if (accept.includes("image/*")) {
-        return f.type.startsWith("image/");
+      
+      // Parse the accept string into individual patterns
+      const patterns = accept.split(",").map((p) => p.trim().toLowerCase());
+      const fileType = f.type.toLowerCase();
+      const fileName = f.name.toLowerCase();
+      
+      for (const pattern of patterns) {
+        // Handle wildcard MIME types like "image/*"
+        if (pattern.endsWith("/*")) {
+          const prefix = pattern.slice(0, -2);
+          if (fileType.startsWith(prefix + "/")) {
+            return true;
+          }
+        }
+        // Handle exact MIME types like "application/pdf"
+        else if (pattern.includes("/")) {
+          if (fileType === pattern) {
+            return true;
+          }
+        }
+        // Handle file extensions like ".pdf", ".txt"
+        else if (pattern.startsWith(".")) {
+          if (fileName.endsWith(pattern)) {
+            return true;
+          }
+        }
       }
-      // NOTE: keep simple; expand as needed
-      return true;
+      
+      return false;
     },
     [accept]
   );

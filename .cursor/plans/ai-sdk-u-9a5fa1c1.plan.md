@@ -1,4 +1,39 @@
-<!-- 9a5fa1c1-49ed-4e54-a18b-343f858ef8fc 7c0f54fc-6247-40fd-b502-4bb29521313c -->
+---
+name: LLM Council AI SDK UX Upgrade
+overview: ""
+todos:
+  - id: 9d4fc13b-90dc-4186-8750-f98fa3a221a3
+    content: Create Next.js 15 app with Tailwind CSS dark mode in frontend-next/
+    status: pending
+  - id: aa8b00ee-3673-4a3c-a461-753dd3d4995d
+    content: Install AI Elements (conversation, message, prompt-input) via CLI
+    status: pending
+  - id: d7405981-37f1-47ca-9ad5-8ef00354612a
+    content: Configure @openrouter/ai-sdk-provider with existing API key
+    status: pending
+  - id: f332a524-1ad6-48a0-a7af-7e32a8529403
+    content: Create /api/council route to proxy SSE from Python backend
+    status: pending
+  - id: a8ad1c19-e32c-477c-900b-f38fdb7eaaef
+    content: Port Stage1, Stage2, Stage3 components to Next.js with AI Elements styling
+    status: pending
+  - id: 3da8cbfa-b298-42bc-bb24-3185f298bcfc
+    content: Implement file upload with PromptInputAttachments component
+    status: pending
+  - id: 81af9c93-ca7c-4069-8a5c-e166fb375d5a
+    content: Add Exa web search tool via AI SDK tool calling
+    status: pending
+  - id: df1b8827-3c75-47ad-8bd4-e5c20aad0e9a
+    content: Add image generation tool with DALL-E 3 or Flux
+    status: pending
+  - id: fb5206a9-70c7-44e8-8e25-8f8e44b923f3
+    content: Apply dark mode theme with CSS variables and theme toggle
+    status: pending
+  - id: 0757784a-8506-4cc0-90b8-1632ef011364
+    content: Test all features and remove old frontend/ when ready
+    status: pending
+---
+
 # LLM Council AI SDK UX Upgrade
 
 ## Architecture Overview
@@ -263,16 +298,3 @@ OPENROUTER_API_KEY=sk-or-v1-...
 EXA_API_KEY=...              # For web search
 PYTHON_BACKEND_URL=http://localhost:8001
 ```
-
-### To-dos
-
-- [ ] Create Next.js 15 app with Tailwind CSS dark mode in frontend-next/
-- [ ] Install AI Elements (conversation, message, prompt-input) via CLI
-- [ ] Configure @openrouter/ai-sdk-provider with existing API key
-- [ ] Create /api/council route to proxy SSE from Python backend
-- [ ] Port Stage1, Stage2, Stage3 components to Next.js with AI Elements styling
-- [ ] Implement file upload with PromptInputAttachments component
-- [ ] Add Exa web search tool via AI SDK tool calling
-- [ ] Add image generation tool with DALL-E 3 or Flux
-- [ ] Apply dark mode theme with CSS variables and theme toggle
-- [ ] Test all features and remove old frontend/ when ready
